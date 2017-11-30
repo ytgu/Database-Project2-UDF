@@ -53,11 +53,16 @@ protected [sql] final class GeneralDiskHashedRelation(partitions: Array[DiskPart
 
   override def getIterator() = {
     /* IMPLEMENT THIS METHOD */
-    null
+    partitions.iterator
+//    null
   }
 
   override def closeAllPartitions() = {
     /* IMPLEMENT THIS METHOD */
+    val temp: Iterator[DiskPartition] = getIterator()
+    while(temp.hasNext){
+      temp.next.closePartition()
+    }
   }
 }
 
@@ -80,6 +85,16 @@ private[sql] class DiskPartition (
     */
   def insert(row: Row) = {
     /* IMPLEMENT THIS METHOD */
+    if(!inputClosed){
+      data.add(row)
+      if(measurePartitionSize() > blockSize){
+        spillPartitionToDisk()
+        data.clear()
+      }
+    }
+    else{
+      throw new SparkException("Input is closed!")
+    }
   }
 
   /**
@@ -123,11 +138,13 @@ private[sql] class DiskPartition (
 
       override def next() = {
         /* IMPLEMENT THIS METHOD */
-        null
+        currentIterator.next()
+//        null
       }
 
       override def hasNext() = {
         /* IMPLEMENT THIS METHOD */
+
         false
       }
 
@@ -154,6 +171,11 @@ private[sql] class DiskPartition (
   def closeInput() = {
     /* IMPLEMENT THIS METHOD */
     inputClosed = true
+    if(!data.isEmpty()){
+      spillPartitionToDisk()
+      data.clear()
+    }
+    outStream.close()
   }
 
 
@@ -190,6 +212,24 @@ private[sql] object DiskHashedRelation {
               size: Int = 64,
               blockSize: Int = 64000) = {
     /* IMPLEMENT THIS METHOD */
-    null
+    val partitionList: JavaArrayList[DiskPartition] = new JavaArrayList[DiskPartition](size)
+
+    for(i <- 0 to (size-1)){
+      partitionList.add(new DiskPartition("partition" + i.toString(), blockSize))
+    }
+
+    while(input.hasNext){
+      val keys = input.next()
+      val index = keyGenerator(keys).hashCode() % size
+      partitionList.get(index).insert(keys)
+    }
+
+    for(i <- 0 to (size-1)){
+      partitionList.get(i).closeInput()
+    }
+
+    new GeneralDiskHashedRelation(partitionList)
+
+
   }
 }
