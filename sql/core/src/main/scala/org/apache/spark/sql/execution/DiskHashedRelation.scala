@@ -144,8 +144,19 @@ private[sql] class DiskPartition (
 
       override def hasNext() = {
         /* IMPLEMENT THIS METHOD */
-
-        false
+        if(currentIterator.hasNext){
+          true
+        }
+        else{
+          if(chunkSizeIterator.hasNext){
+            true
+            fetchNextChunk()
+          }
+          else{
+            false
+          }
+        }
+//        false
       }
 
       /**
@@ -156,7 +167,14 @@ private[sql] class DiskPartition (
         */
       private[this] def fetchNextChunk(): Boolean = {
         /* IMPLEMENT THIS METHOD */
-        false
+        val temp = chunkSizeIterator.next
+        if((!(chunkSizeIterator.hasNext)) || (temp <= 0)){
+          false
+        }
+        byteArray = CS143Utils.getNextChunkBytes(inStream, temp, byteArray)
+        currentIterator = CS143Utils.getListFromBytes(byteArray).iterator.asScala
+        true
+//        false
       }
     }
   }
@@ -228,8 +246,9 @@ private[sql] object DiskHashedRelation {
       partitionList.get(i).closeInput()
     }
 
-    new GeneralDiskHashedRelation(partitionList)
-
+    val partitions: Array[DiskPartition] = partitionList.toArray(new Array[DiskPartition](size))
+    val result: GeneralDiskHashedRelation = new GeneralDiskHashedRelation(partitions)
+    result
 
   }
 }
