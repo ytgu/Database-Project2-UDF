@@ -31,7 +31,7 @@ import org.apache.spark.sql.catalyst.plans.physical.{ClusteredDistribution, Orde
 import org.apache.spark.util.MutablePair
 import org.apache.spark.util.collection.ExternalSorter
 
-/**o
+/**
   * :: DeveloperApi ::
   */
 @DeveloperApi
@@ -99,16 +99,25 @@ case class PartitionProject(projectList: Seq[Expression], child: SparkPlan) exte
     val keyGenerator = CS143Utils.getNewProjection(projectList, child.output)
 
     /* IMPLEMENT THIS METHOD */
+    val hashrel :DiskHashedRelation = DiskHashedRelation(input, keyGenerator)
+    val partitionitr : Iterator[DiskPartition] = hashrel.getIterator()
+    var cacheitr : Iterator[Row] = null
 
     new Iterator[Row] {
       def hasNext() = {
         /* IMPLEMENT THIS METHOD */
-        false
+        if(cacheitr.hasNext && cacheitr != null && partitionitr.hasNext && partitionitr != null)
+          true
+        else
+          false
       }
 
       def next() = {
         /* IMPLEMENT THIS METHOD */
-        null
+        if(cacheitr.hasNext && cacheitr != null && fetchNextPartition())
+          cacheitr.next()
+        else
+          null
       }
 
       /**
@@ -119,7 +128,19 @@ case class PartitionProject(projectList: Seq[Expression], child: SparkPlan) exte
         */
       private def fetchNextPartition(): Boolean  = {
         /* IMPLEMENT THIS METHOD */
-        false
+        if(partitionitr.hasNext){
+          val data: Iterator[Row] = partitionitr.next().getData()
+          if(!(data.hasNext)){
+            false
+          }
+          else{
+            cacheitr = CS143Utils.generateCachingIterator(projectList, child.output)(data)
+            true
+          }
+        }
+        else{
+          false
+        }
       }
     }
   }

@@ -130,10 +130,13 @@ object CS143Utils {
   def getUdfFromExpressions(expressions: Seq[Expression]): ScalaUdf = {
     /* IMPLEMENT THIS METHOD */
     var udf: ScalaUdf = null
+
     var i = 0
     for(i <- 0 to (expressions.size-1)) {
-      if (expressions(i).isInstanceOf[ScalaUdf]) {
-        udf = expressions(i).asInstanceOf[ScalaUdf]
+      if(udf == null) {
+        if (expressions(i).isInstanceOf[ScalaUdf]) {
+          udf = expressions(i).asInstanceOf[ScalaUdf]
+        }
       }
     }
     udf
@@ -232,8 +235,6 @@ object CachingIteratorGenerator {
 
       def hasNext() = {
         /* IMPLEMENT THIS METHOD */
-        if(!input.hasNext)
-          cache.clear
         input.hasNext
       }
 
@@ -246,8 +247,11 @@ object CachingIteratorGenerator {
         var evaluation: Row = null
 
         if(cache.get(curkey) == null){
-          var evaluation = udfProject(currow)
+          evaluation = udfProject(currow)
           cache.put(curkey, evaluation)
+        }
+        else{
+          evaluation = cache.get(curkey)
         }
 
         var value = preudf ++ evaluation ++ postudf
