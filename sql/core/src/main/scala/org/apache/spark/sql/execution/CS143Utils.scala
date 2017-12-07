@@ -130,68 +130,69 @@ object CS143Utils {
   def getUdfFromExpressions(expressions: Seq[Expression]): ScalaUdf = {
     /* IMPLEMENT THIS METHOD */
     var udf: ScalaUdf = null
-    expressions.foreach { (expression: Expression) => {
-      if (expression.isInstanceOf[ScalaUdf]) udf = expression.asInstanceOf[ScalaUdf]
-    }
+    var i = 0
+    for(i <- 0 to (expressions.size-1)) {
+      if (expressions(i).isInstanceOf[ScalaUdf]) {
+        udf = expressions(i).asInstanceOf[ScalaUdf]
+      }
     }
     udf
-//    null
-  }
+}
 
-  /**
-    * This function takes a sequence of expressions. If there is no UDF in the sequence of expressions, it does
-    * a regular projection operation.
-    *
-    * If there is a UDF, then it creates a caching iterator that caches the result of the UDF.
-    *
-    * NOTE: This only works for a single UDF. If there are multiple UDFs, then it will only cache for the last UDF
-    * and execute all other UDFs regularly.
-    *
-    * @param expressions
-    * @param inputSchema
-    * @return
-    */
-  def generateCachingIterator(
-                               expressions: Seq[Expression],
-                               inputSchema: Seq[Attribute]): (Iterator[Row] => Iterator[Row]) = {
-    // Get the UDF from the expressions.
-    val udf: ScalaUdf = CS143Utils.getUdfFromExpressions(expressions)
+/**
+  * This function takes a sequence of expressions. If there is no UDF in the sequence of expressions, it does
+  * a regular projection operation.
+  *
+  * If there is a UDF, then it creates a caching iterator that caches the result of the UDF.
+  *
+  * NOTE: This only works for a single UDF. If there are multiple UDFs, then it will only cache for the last UDF
+  * and execute all other UDFs regularly.
+  *
+  * @param expressions
+  * @param inputSchema
+  * @return
+  */
+def generateCachingIterator(
+expressions: Seq[Expression],
+inputSchema: Seq[Attribute]): (Iterator[Row] => Iterator[Row]) = {
+// Get the UDF from the expressions.
+val udf: ScalaUdf = CS143Utils.getUdfFromExpressions(expressions)
 
-    udf match {
-      /* If there is no UDF, then do a regular projection operation. Note that this is very similar to Project in
-         basicOperators.scala */
-      case null => {
-        { input =>
-          val projection = CS143Utils.getNewProjection(expressions, inputSchema)
-          input.map(projection)
-        }
-      }
+udf match {
+/* If there is no UDF, then do a regular projection operation. Note that this is very similar to Project in
+   basicOperators.scala */
+case null => {
+{ input =>
+val projection = CS143Utils.getNewProjection(expressions, inputSchema)
+input.map(projection)
+}
+}
 
-      // Otherwise, separate the expressions appropriately and creating a caching iterator.
-      case u: ScalaUdf => {
-        val udfIndex: Int = expressions.indexOf(u)
-        val preUdfExpressions = expressions.slice(0, udfIndex)
-        val postUdfExpressions = expressions.slice(udfIndex + 1, expressions.size)
+// Otherwise, separate the expressions appropriately and creating a caching iterator.
+case u: ScalaUdf => {
+val udfIndex: Int = expressions.indexOf(u)
+val preUdfExpressions = expressions.slice(0, udfIndex)
+val postUdfExpressions = expressions.slice(udfIndex + 1, expressions.size)
 
-        CachingIteratorGenerator(udf.children, udf, preUdfExpressions, postUdfExpressions, inputSchema)
-      }
-    }
+CachingIteratorGenerator(udf.children, udf, preUdfExpressions, postUdfExpressions, inputSchema)
+}
+}
 
-  }
+}
 
-  /**
-    * This method is called before a new value is added to the aggregation table. The idea is to
-    * check if the size of the aggregation table is proper in case the new record will trigger the
-    * expansion of the table.
-    * @param collection a map able to track its size
-    * @param allowedMemory the maximum amount of memory allowed for the input collection
-    * @return true if the addition of a new record will make the table grow beyond the allowed size
-    */
-  def maybeSpill[K, V](collection: SizeTrackingAppendOnlyMap[K, V], allowedMemory: Long): Boolean = {
-    // Just a workaround, not completely correct, as not every insert triggers hash table expansion,
-    // also need to check #atGrowThreshold
-    collection.estimateSize() * 2 > allowedMemory
-  }
+/**
+  * This method is called before a new value is added to the aggregation table. The idea is to
+  * check if the size of the aggregation table is proper in case the new record will trigger the
+  * expansion of the table.
+  * @param collection a map able to track its size
+  * @param allowedMemory the maximum amount of memory allowed for the input collection
+  * @return true if the addition of a new record will make the table grow beyond the allowed size
+  */
+def maybeSpill[K, V](collection: SizeTrackingAppendOnlyMap[K, V], allowedMemory: Long): Boolean = {
+// Just a workaround, not completely correct, as not every insert triggers hash table expansion,
+// also need to check #atGrowThreshold
+collection.estimateSize() * 2 > allowedMemory
+}
 }
 
 
@@ -231,39 +232,27 @@ object CachingIteratorGenerator {
 
       def hasNext() = {
         /* IMPLEMENT THIS METHOD */
+        if(!input.hasNext)
+          cache.clear
         input.hasNext
-//        false
       }
 
       def next() = {
         /* IMPLEMENT THIS METHOD */
-        if(!input.hasNext) {
-          null
+        var currow :Row = input.next()
+        var curkey :Row = cacheKeyProjection(currow)
+        var preudf :Row = preUdfProjection(currow)
+        var postudf: Row = postUdfProjection(currow)
+        var evaluation: Row = null
+
+        if(cache.get(curkey) == null){
+          var evaluation = udfProject(currow)
+          cache.put(curkey, evaluation)
         }
 
-        // Get the current row and its key projection
-        var curRow = input.next()
-        var curKey = cacheKeyProjection(curRow)
-
-        val preEval = preUdfProjection(curRow)
-        val postEval = postUdfProjection(curRow)
-
-        // Get value for evaluation of this UDF
-        val evaluation = {
-          // If the key hasn't been used, create new one and save to key projection
-          if (!cache.containsKey(curKey)) {
-            val evals = udfProject(curKey)
-            cache.put(curKey, evals)
-            evals
-          }
-          else {
-            cache.get(curKey)
-          }
-        }
-        // Sequence them all up and store it
-        val result = preEval ++ evaluation ++ postEval
-        Row.fromSeq(result)
-        //        null
+        var value = preudf ++ evaluation ++ postudf
+        // Reimplement me
+        Row.fromSeq(value)
       }
     }
   }
