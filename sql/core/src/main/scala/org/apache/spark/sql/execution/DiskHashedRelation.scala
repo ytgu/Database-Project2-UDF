@@ -237,8 +237,8 @@ private[sql] object DiskHashedRelation {
     }
 
     while(input.hasNext){
-      val keys = input.next()
-      val index = keyGenerator(keys).hashCode() % size
+      var keys = input.next()
+      var index = keyGenerator(keys).hashCode() % size
       partitionList.get(index).insert(keys)
     }
 

@@ -231,12 +231,39 @@ object CachingIteratorGenerator {
 
       def hasNext() = {
         /* IMPLEMENT THIS METHOD */
-        false
+        input.hasNext
+//        false
       }
 
       def next() = {
         /* IMPLEMENT THIS METHOD */
-        null
+        if(!input.hasNext) {
+          null
+        }
+
+        // Get the current row and its key projection
+        var curRow = input.next()
+        var curKey = cacheKeyProjection(curRow)
+
+        val preEval = preUdfProjection(curRow)
+        val postEval = postUdfProjection(curRow)
+
+        // Get value for evaluation of this UDF
+        val evaluation = {
+          // If the key hasn't been used, create new one and save to key projection
+          if (!cache.containsKey(curKey)) {
+            val evals = udfProject(curKey)
+            cache.put(curKey, evals)
+            evals
+          }
+          else {
+            cache.get(curKey)
+          }
+        }
+        // Sequence them all up and store it
+        val result = preEval ++ evaluation ++ postEval
+        Row.fromSeq(result)
+        //        null
       }
     }
   }
