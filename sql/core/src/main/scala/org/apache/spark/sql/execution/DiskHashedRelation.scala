@@ -59,7 +59,7 @@ protected [sql] final class GeneralDiskHashedRelation(partitions: Array[DiskPart
 
   override def closeAllPartitions() = {
     /* IMPLEMENT THIS METHOD */
-    val temp: Iterator[DiskPartition] = getIterator()
+    var temp: Iterator[DiskPartition] = getIterator()
     while(temp.hasNext){
       temp.next.closePartition()
     }
@@ -90,6 +90,7 @@ private[sql] class DiskPartition (
       if(measurePartitionSize() > blockSize){
         spillPartitionToDisk()
         data.clear()
+        writtenToDisk = false
       }
     }
     else{
@@ -138,24 +139,31 @@ private[sql] class DiskPartition (
 
       override def next() = {
         /* IMPLEMENT THIS METHOD */
-        currentIterator.next()
+        if(currentIterator.hasNext) {
+          currentIterator.next()
+        }
+        else{
+          null
+        }
 //        null
       }
 
       override def hasNext() = {
         /* IMPLEMENT THIS METHOD */
+        var rs = false
         if(currentIterator.hasNext){
-          true
+          rs = true
         }
         else{
           if(chunkSizeIterator.hasNext){
-            true
+            rs = true
             fetchNextChunk()
           }
           else{
-            false
+            rs = false
           }
         }
+        rs
 //        false
       }
 
@@ -167,7 +175,7 @@ private[sql] class DiskPartition (
         */
       private[this] def fetchNextChunk(): Boolean = {
         /* IMPLEMENT THIS METHOD */
-        val temp = chunkSizeIterator.next
+        var temp = chunkSizeIterator.next
         if((!(chunkSizeIterator.hasNext)) || (temp <= 0)){
           false
         }
@@ -231,8 +239,9 @@ private[sql] object DiskHashedRelation {
               blockSize: Int = 64000) = {
     /* IMPLEMENT THIS METHOD */
     val partitionList: JavaArrayList[DiskPartition] = new JavaArrayList[DiskPartition](size)
+    var i = 0
 
-    for(i <- 0 to (size-1)){
+    for(i <- 0 until size){
       partitionList.add(new DiskPartition("partition" + i.toString(), blockSize))
     }
 
@@ -242,7 +251,7 @@ private[sql] object DiskHashedRelation {
       partitionList.get(index).insert(keys)
     }
 
-    for(i <- 0 to (size-1)){
+    for(i <- 0 until size){
       partitionList.get(i).closeInput()
     }
 

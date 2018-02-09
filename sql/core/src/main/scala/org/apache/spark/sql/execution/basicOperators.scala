@@ -106,18 +106,29 @@ case class PartitionProject(projectList: Seq[Expression], child: SparkPlan) exte
     new Iterator[Row] {
       def hasNext() = {
         /* IMPLEMENT THIS METHOD */
-        if(cacheitr.hasNext && cacheitr != null && partitionitr.hasNext && partitionitr != null)
-          true
-        else
-          false
+        var rs = false
+        if(cacheitr != null){
+          if(cacheitr.hasNext) {
+            rs = true
+          }
+          else{
+            rs = fetchNextPartition()
+          }
+        }
+        else {
+          rs = fetchNextPartition()
+        }
+        rs
       }
 
       def next() = {
         /* IMPLEMENT THIS METHOD */
-        if(cacheitr.hasNext && cacheitr != null && fetchNextPartition())
+        if((cacheitr != null) && cacheitr.hasNext) {
           cacheitr.next()
-        else
+        }
+        else {
           null
+        }
       }
 
       /**
@@ -128,19 +139,15 @@ case class PartitionProject(projectList: Seq[Expression], child: SparkPlan) exte
         */
       private def fetchNextPartition(): Boolean  = {
         /* IMPLEMENT THIS METHOD */
+        var rs = false
         if(partitionitr.hasNext){
           val data: Iterator[Row] = partitionitr.next().getData()
-          if(!(data.hasNext)){
-            false
-          }
-          else{
+          if(data.hasNext){
             cacheitr = CS143Utils.generateCachingIterator(projectList, child.output)(data)
-            true
+            rs = true
           }
         }
-        else{
-          false
-        }
+        rs
       }
     }
   }

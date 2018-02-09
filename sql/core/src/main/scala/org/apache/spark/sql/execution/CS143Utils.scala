@@ -16,7 +16,6 @@
  */
 
 package org.apache.spark.sql.execution
-
 import java.io._
 import java.util.{ArrayList => JavaArrayList, HashMap => JavaHashMap}
 
@@ -130,9 +129,9 @@ object CS143Utils {
   def getUdfFromExpressions(expressions: Seq[Expression]): ScalaUdf = {
     /* IMPLEMENT THIS METHOD */
     var udf: ScalaUdf = null
-
     var i = 0
-    for(i <- 0 to (expressions.size-1)) {
+
+    for(i <- 0 until expressions.size) {
       if(udf == null) {
         if (expressions(i).isInstanceOf[ScalaUdf]) {
           udf = expressions(i).asInstanceOf[ScalaUdf]
@@ -240,23 +239,27 @@ object CachingIteratorGenerator {
 
       def next() = {
         /* IMPLEMENT THIS METHOD */
-        var currow :Row = input.next()
-        var curkey :Row = cacheKeyProjection(currow)
-        var preudf :Row = preUdfProjection(currow)
-        var postudf: Row = postUdfProjection(currow)
-        var evaluation: Row = null
-
-        if(cache.get(curkey) == null){
-          evaluation = udfProject(currow)
-          cache.put(curkey, evaluation)
+        if(!input.hasNext){
+          null
         }
-        else{
-          evaluation = cache.get(curkey)
-        }
+        else {
+          var currow: Row = input.next()
+          var curkey: Row = cacheKeyProjection(currow)
+          var preudf: Row = preUdfProjection(currow)
+          var postudf: Row = postUdfProjection(currow)
+          var evaluation: Row = null
 
-        var value = preudf ++ evaluation ++ postudf
-        // Reimplement me
-        Row.fromSeq(value)
+          if (cache.get(curkey) == null) {
+            evaluation = udfProject(currow)
+            cache.put(curkey, evaluation)
+          }
+          else {
+            evaluation = cache.get(curkey)
+          }
+
+          var value = preudf ++ evaluation ++ postudf
+          Row.fromSeq(value)
+        }
       }
     }
   }
@@ -279,13 +282,22 @@ object AggregateIteratorGenerator {
 
       def hasNext() = {
         /* IMPLEMENT THIS METHOD */
-        false
+        input.hasNext
       }
 
       def next() = {
         /* IMPLEMENT THIS METHOD */
-        null
+        val (currentEntry1, currentEntry2) = input.next()
+        val currentGroup = currentEntry1
+        val currentBuffer = currentEntry2
+        val aggregateResults = new GenericMutableRow(1)
+        val joinedRow = new JoinedRow4
+
+        aggregateResults(0) = currentBuffer.eval(EmptyRow)
+
+        postAggregateProjection(joinedRow(aggregateResults, currentGroup))
       }
     }
+
   }
 }

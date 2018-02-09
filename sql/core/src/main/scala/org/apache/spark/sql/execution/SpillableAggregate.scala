@@ -54,13 +54,23 @@ case class SpillableAggregate(
                                 resultAttribute: AttributeReference)
 
   /** Physical aggregator generated from a logical expression.  */
-  private[this] val aggregator: ComputedAggregate = null //IMPLEMENT ME
+  private[this] val aggregator: ComputedAggregate = {
+    aggregateExpressions.flatMap { agg =>
+      agg.collect {
+        case a: AggregateExpression =>
+          ComputedAggregate(
+            a,
+            BindReferences.bindReference(a, child.output),
+            AttributeReference(s"aggResult:$a", a.dataType, a.nullable)())
+      }
+    }.head
+  } //IMPLEMENT ME
 
   /** Schema of the aggregate.  */
-  private[this] val aggregatorSchema: AttributeReference = null //IMPLEMENT ME
+  private[this] val aggregatorSchema: AttributeReference = aggregator.resultAttribute //IMPLEMENT ME
 
   /** Creates a new aggregator instance.  */
-  private[this] def newAggregatorInstance(): AggregateFunction = null //IMPLEMENT ME
+  private[this] def newAggregatorInstance(): AggregateFunction = aggregator.aggregate.newInstance() //IMPLEMENT ME
 
   /** Named attributes used to substitute grouping attributes in the final result. */
   private[this] val namedGroups = groupingExpressions.map {
@@ -104,7 +114,13 @@ case class SpillableAggregate(
 
     def initSpills(): Array[DiskPartition] = {
       /* IMPLEMENT THIS METHOD */
-      null
+      val dpartition = new Array[DiskPartition](numPartitions)
+      var i = 0
+      while(i < numPartitions){
+        dpartition(i) = new DiskPartition("dpartition" + i.toString(), 0)
+        i = i + 1
+      }
+      dpartition
     }
 
     val spills = initSpills()
@@ -122,12 +138,29 @@ case class SpillableAggregate(
 
       def hasNext() = {
         /* IMPLEMENT THIS METHOD */
-        false
+        var rs = true
+        if(!aggregateResult.hasNext){
+          if(!fetchSpill()){
+            rs = false
+          }
+        }
+        rs
       }
 
       def next() = {
         /* IMPLEMENT THIS METHOD */
-        null
+        if(aggregateResult.hasNext){
+            aggregateResult.next()
+        }
+        else{
+          if(fetchSpill()){
+            fetchSpill()
+            aggregateResult.next()
+          }
+          else{
+            null
+          }
+        }
       }
 
       /**
@@ -137,7 +170,31 @@ case class SpillableAggregate(
         */
       private def aggregate(): Iterator[Row] = {
         /* IMPLEMENT THIS METHOD */
-        null
+        var currentRow :Row = null
+        while (data.hasNext) {
+          currentRow = data.next()
+          val currentGroup = groupingProjection(currentRow)
+          var currentBuffer = currentAggregationTable(currentGroup)
+          var flag = CS143Utils.maybeSpill(currentAggregationTable, memorySize)
+          if(!flag){
+            if (currentBuffer == null) {
+              currentBuffer = newAggregatorInstance()
+              currentAggregationTable.update(currentGroup.copy(), currentBuffer)
+            }
+            currentBuffer.update(currentRow)
+          }
+          else{
+            spillRecord(currentGroup, currentRow)
+          }
+        }
+        var i = 0
+        while(i < numPartitions){
+          spills(i).closeInput()
+          i = i + 1
+        }
+
+        AggregateIteratorGenerator(resultExpression, Array(aggregatorSchema) ++ namedGroups.map(_._2))(currentAggregationTable.iterator)
+
       }
 
       /**
@@ -147,6 +204,7 @@ case class SpillableAggregate(
         */
       private def spillRecord(group: Row, row: Row)  = {
         /* IMPLEMENT THIS METHOD */
+        spills(group.hashCode() % numPartitions).insert(row)
       }
 
       /**
@@ -157,7 +215,27 @@ case class SpillableAggregate(
         */
       private def fetchSpill(): Boolean  = {
         /* IMPLEMENT THIS METHOD */
-        false
+        var rs = false
+
+        // comment line 221 - 236 to run task 6
+        if(!aggregateResult.hasNext){
+          if(hashedSpills.size == 0){
+            hashedSpills = Some(spills.iterator)
+          }
+
+          var flag = false
+          while(!flag && hashedSpills.get.hasNext ){
+            data = hashedSpills.orNull.next().getData()
+            if (data.hasNext) {
+              flag = true
+              currentAggregationTable = new SizeTrackingAppendOnlyMap[Row, AggregateFunction]
+              aggregateResult = aggregate()
+              rs = true
+            }
+          }
+        }
+
+        rs
       }
     }
   }
